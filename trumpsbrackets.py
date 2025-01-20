@@ -1,5 +1,5 @@
 #! /home/robin/py/venv/bin/python
-from typing import NamedTuple
+from dataclasses import dataclass
 from collections import Counter
 import random
 import csv
@@ -16,11 +16,21 @@ def sign(x: float) -> int:
     return 0
 
 
-class Card(NamedTuple):
+@dataclass
+class Card:
     name: str
     skills: list[str]
     values: list[float]
 
+    def __init__(self, name: str, skills: list[str], values: list[float]):
+        if len(values) != len(skills):
+            raise ValueError(
+                f"Attributes for {name} dont align, "
+                f"got {len(values)}, expected {len(skills)}"
+            )
+        self.name = name
+        self.skills = skills
+        self.values = values
 
 def read_cards(filename: str) -> tuple[list[Card], list[str]]:
     cards = []
