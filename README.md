@@ -17,7 +17,9 @@ name,attr1,attr2-,attr3
 The name is required.
 Cards can have any numbers of arbitrarily named attributes.
 If the name of the attribute has a trailihng `-` then the lower the attribute
-the better. Otherwise larger is better.
+the better. 
+If the name of the attribute has a trailing `!` then the attribute is ignored.
+Otherwise larger is better.
 
 Cards the go through thousands of "tournaments"
 

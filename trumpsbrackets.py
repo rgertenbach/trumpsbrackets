@@ -69,7 +69,9 @@ def read_cards(filename: str) -> tuple[list[Card], list[str]]:
         reader = csv.reader(f)
         header = next(reader)[1:]
         for col in header:
-            ordering.append("-" if col.endswith("-") else "+")
+            if col.endswith("-"): ordering.append("-")
+            elif col.endswith("!"): ordering.append("!")
+            else: ordering.append("+")
         header = [h.removesuffix("-") for h in header]
 
         for line in reader:
@@ -86,6 +88,7 @@ def compare(
 ) -> tuple[Team, Team]:
     apoints = 0
     for av, bv, op in zip(a.values(resolution), b.values(resolution), ordering):
+        if op == "!": continue
         av, bv = (av, bv) if op == "+" else (bv, av)
         apoints += sign(av - bv)
     if apoints == 0:
