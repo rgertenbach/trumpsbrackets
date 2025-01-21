@@ -41,6 +41,9 @@ Arguments:
 -   The `file.csv` is the CSV file you created above and is required.
 -   `-n`: The number of simulated tournaments to run, defaults to 100,000.
 -   `--interactive` / `--no-interactive`: Whether to throw you into an IPython REPL, if you don't pass this it will.
+-   `--teamsize` / `-t`: How many cards should be in one team (defaults to 1)
+-   `--team_resolution` / `-r`: How to resolve the attributes across cards.
+     One of `min`, `max`, or `sum`
 
 
 Dependencies:
