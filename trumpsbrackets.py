@@ -6,7 +6,20 @@ import csv
 import pandas as pd
 import IPython
 import argparse
+import enum
+from typing import Sequence, MutableSequence
 
+
+class TeamResolution(enum.Enum):
+  MAX = "max"
+  SUM = "sum"
+  MIN = "min"
+
+_RESOLUTIONS = {
+    TeamResolution.MAX: max,
+    TeamResolution.SUM: sum,
+    TeamResolution.MIN: min,
+}
 
 def sign(x: float) -> int:
     if x < 0:
@@ -32,6 +45,23 @@ class Card:
         self.skills = skills
         self.values = values
 
+
+@dataclass
+class Team:
+  cards: Sequence[Card]
+  def __init__(self, cards: Sequence[Card]):
+    if not cards:
+      raise ValueError("Need at least one team member")
+    self.cards = cards
+
+  def values(self, resolution: TeamResolution) -> list[float]:
+    resolve = _RESOLUTIONS[resolution]
+    return [
+        resolve([c.values[i] for c in self.cards])
+        for i in range(len(self.cards[0].skills))
+    ]
+
+
 def read_cards(filename: str) -> tuple[list[Card], list[str]]:
     cards = []
     ordering = []
@@ -48,9 +78,14 @@ def read_cards(filename: str) -> tuple[list[Card], list[str]]:
     return cards, ordering
 
 
-def compare(a: Card, b: Card, ordering: list[str]) -> tuple[Card, Card]:
+def compare(
+    a: Team,
+    b: Team,
+    ordering: list[str],
+    resolution: TeamResolution
+) -> tuple[Team, Team]:
     apoints = 0
-    for av, bv, op in zip(a.values, b.values, ordering):
+    for av, bv, op in zip(a.values(resolution), b.values(resolution), ordering):
         av, bv = (av, bv) if op == "+" else (bv, av)
         apoints += sign(av - bv)
     if apoints == 0:
@@ -60,57 +95,85 @@ def compare(a: Card, b: Card, ordering: list[str]) -> tuple[Card, Card]:
     return b, a
 
 
+def make_teams(cards: MutableSequence[Card], size: int) -> list[Team]:
+  n = len(cards)
+  if n % size: 
+    raise ValueError(f"Cannot make even sets of {size} from {len(cards)} cards")
+  random.shuffle(cards)
+  teams = []
+  for i in range(n // size):
+    teams.append(Team(cards[i * size:i * size + size]))
+  return teams
+
+
 def fight_roster(
-    cards: list[Card], ordering: list[str]
-) -> tuple[list[Card], list[Card]]:
+    teams: list[Team],
+    ordering: list[str],
+    resolution: TeamResolution = TeamResolution.MAX,
+) -> tuple[list[Team], list[Team]]:
     winners = []
     losers = []
-    random.shuffle(cards)
-    if len(cards) % 2 == 1:
-        winners.append(cards.pop())
-    while cards:
-        a, b = cards.pop(), cards.pop()
-        winner, loser = compare(a, b, ordering)
+    if len(teams) % 2:
+        winners.append(teams.pop())
+    while teams:
+        a, b = teams.pop(), teams.pop()
+        winner, loser = compare(a, b, ordering, resolution)
         winners.append(winner)
         losers.append(loser)
 
     return winners, losers
 
 
-def one_round(cards: list[Card], ordering: list[str]) -> list[Card]:
-    result = []
+def one_round(
+    cards: list[Card],
+    ordering: list[str],
+    teamsize: int = 1,
+    resolution: TeamResolution = TeamResolution.MAX,
+) -> list[Team]:
+    """Returns teams in order of when they lost, winners last."""
+    result: list[Team] = []
     cards = cards[:]
-    while cards:
-        winners, losers = fight_roster(cards, ordering)
+    teams = make_teams(cards, teamsize)
+    while teams:
+        winners, losers = fight_roster(teams, ordering, resolution)
         result.extend(losers)
         if len(winners) == 1:
             result.extend(winners)
             break
-        cards = winners
+        teams = winners
     return result
 
 
-def evaluate_result(ranks: list[Card]) -> dict[str, int]:
-    n = len(ranks)
-    return {card.name: n - i for i, card in enumerate(ranks)}
+def evaluate_result(ranks: list[Team]) -> dict[str, int]:
+    return {
+        card.name: len(ranks) - i
+        for i, team in enumerate(ranks)
+        for card in team.cards}
 
 
-def n_rounds(cards: list[Card], n: int, ordering: list[str]) -> dict[str, Counter]:
+def n_rounds(
+    cards: list[Card],
+    n: int,
+    ordering: list[str],
+    teamsize: int = 1,
+    resolution: TeamResolution = TeamResolution.MAX,
+) -> dict[str, Counter]:
     ranks = {card.name: Counter() for card in cards}
     for i in range(n):
-        if i % 1000 == 0:
+        if i and i % 1000 == 0:
             print(f"\r{i:,.0f}", end="", flush=True)
-        results = evaluate_result(one_round(cards, ordering))
+        results = evaluate_result(one_round(cards, ordering, teamsize, resolution))
         for card, rank in results.items():
             ranks[card][rank] += 1
-    print()
+    print("\r", end="")
     return ranks
 
-def rounds_needed(cards: int) -> int:
+
+def rounds_needed(participants: int) -> int:
   out = 0
-  while cards > 1:
+  while participants > 1:
     out += 1
-    cards = cards // 2 + cards % 2
+    participants = participants // 2 + participants % 2
 
   return out
 
@@ -142,11 +205,25 @@ def main():
           "to prevent"
         )
     )
-    parser.add_argument("-n", type=int, default=100_000, help="Number of simulations")
+    parser.add_argument(
+        "-n", type=int, default=100_000, help="Number of simulations"
+    )
+    parser.add_argument(
+        "-t", "--teamsize",
+        type=int,
+        default=1,
+        help="How large teams are, by defaul everybody fights for themselves"
+    )
+    parser.add_argument(
+        "-r", "--team_resolution",
+        type=TeamResolution,
+        default=TeamResolution.MAX,
+        help="How multiple attributes get resolved, one of max, sum or min"
+    )
 
     args = parser.parse_args()
     cards, ordering = read_cards(args.file)
-    results = n_rounds(cards, args.n, ordering)
+    results = n_rounds(cards, args.n, ordering, args.teamsize)
     results = (
         pd.DataFrame(results)
         .fillna(0)
@@ -154,12 +231,13 @@ def main():
         .sort_index(axis=1)
         .astype(int)
     )
-    ncards = len(cards)
-    for round in range(rounds_needed(ncards)):
-      results[f"lost_{round + 1}"] = results.iloc[:, ncards // 2 + ncards % 2:ncards].sum(axis=1)
-      ncards = ncards // 2 + ncards % 2
+
+    nteams = len(cards) // args.teamsize
+    for round in range(rounds_needed(nteams)):
+      results[f"lost_{round + 1}"] = results.iloc[:, nteams // 2 + nteams % 2:nteams].sum(axis=1)
+      nteams = nteams // 2 + nteams % 2
     results["won"] = results.loc[:, 1]
-    results = results.drop(columns=range(1, len(cards) + 1))
+    results = results.drop(columns=range(1, len(cards) // args.teamsize + 1))
     print(results)
 
     if args.interactive:
